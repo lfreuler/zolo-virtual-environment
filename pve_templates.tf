@@ -1,0 +1,206 @@
+# ================================
+# Variables
+# ================================
+variable "node_name" {
+  default = "pve"  # DEIN NODE NAME
+}
+
+variable "ssh_public_key" {
+  description = "SSH public key"
+  type        = string
+  default     = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCz4A/9Azc1ti6hnqYe9VkMDSc52f35cpCrwFVyDrZee9bhx8mkpybPHWs9Gnh6xpXNMOvlRXZUWJxHm0PgwdN02woG8IHarNWcEDqCbdoB+GHLaGhapTH1oBrtVUm9hRivPUeiQn8ZtKA07qIbseYZDzVOBw/L77iCfdBVPNCOsZOmrKX7jrIm/eecXNn3P3EjA5c4uuxUZfhSHruOuIfkAvwMou4aR3zm0EB1tlqoCw1RPIVRzvXm61Jbr3n4MzOxi8EJ5Vyo5a9/NAwa5grHzpMrNwi7nF6tU+S9bwqqIqbRrLuMX2H9KM+xCReArp+Ytf0oFKW5Gh7K6aN7gBGSVBzSNPnY0eIx6X8g9Em1lQ3pTjFgubLJepZ8/P4sCiikVYrsftqdbN23aoInukKeI7Lqst3UUx6Lymtq6cq4bX7uDdj5c1JSMEEp97/p5XAEpKmk1zWFeGAOdEYpi+fMN674OYde+8gmv2cCKSVkFfosvdYIa4HNlk23r4eMuN0ohYCa/rDWKA8iUjpKuZRpHlvuJl+De+adsJ82isANlhBvqpue61rHku38hZGOrsVT3P6CH+I3b51DNx0G1i0N/+K+olRkW2zobdaxVzkywIx8ytmbpFVUqL37BILz8mw7YqEgXFOcrkE06DFHFpHmm9Zu89FmjWbQVhTbFl/how== root@pve"
+}
+
+# ================================
+# Cloud Image Download (automatisch)
+# ================================
+resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
+  content_type = "iso"
+  datastore_id = "local"
+  node_name    = var.node_name
+  
+  url      = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+  file_name = "ubuntu-24.04-cloudimg.img"
+  
+  # Checksum verification (disabled for development)
+  # checksum = "834af9cd766d1fd86eca156db7dff34c3713fbbc7f5507a3269be2a72d2d1820"
+  # checksum_algorithm = "sha256"
+}
+
+# ================================
+# Template erstellen (SAUBER!)
+# ================================
+resource "proxmox_virtual_environment_vm" "ubuntu_template" {
+  name        = "ubuntu-template"
+  description = "Ubuntu 24.04 Cloud Template"
+  node_name   = var.node_name
+  vm_id       = 9001
+  
+  # Template mode
+  template = true
+  
+  # CPU & Memory
+  cpu {
+    cores = 2
+    type  = "host"
+  }
+  
+  memory {
+    dedicated = 2048
+  }
+  
+  # Cloud image als Disk
+  disk {
+    datastore_id = "local-lvm"
+    file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image.id
+    interface    = "scsi0"
+    iothread     = true
+    discard      = "on"
+    size         = 20
+    ssd          = true
+  }
+  
+  # Cloud-Init Drive
+  disk {
+    datastore_id = "local-lvm"
+    file_format  = "raw"
+    interface    = "ide0"
+    size         = 4
+  }
+  
+  # Network
+  network_device {
+    bridge = "vmbr0"
+    model  = "virtio"
+  }
+  
+  # Cloud-Init
+  initialization {
+    user_account {
+      username = "ubuntu"
+      keys     = [var.ssh_public_key]
+    }
+    
+    ip_config {
+      ipv4 {
+        address = "dhcp"
+      }
+    }
+  }
+  
+  # Boot order
+  boot_order = ["scsi0"]
+  
+  # QEMU Guest Agent
+  agent {
+    enabled = true
+  }
+  
+  # VGA
+  vga {
+    type = "serial0"
+  }
+  
+  serial_device {
+    device = "socket"
+  }
+  
+  operating_system {
+    type = "l26"
+  }
+}
+
+# ================================
+# VMs aus Template (CLEAN!)
+# ================================
+resource "proxmox_virtual_environment_vm" "ubuntu_vms" {
+  count = 3
+  
+  name      = "ubuntu-vm-${count.index + 1}"
+  node_name = var.node_name
+  vm_id     = 100 + count.index
+  
+  # Template klonen
+  clone {
+    vm_id = proxmox_virtual_environment_vm.ubuntu_template.vm_id
+    full  = true
+  }
+  
+  # CPU & Memory
+  cpu {
+    cores = 4
+    type  = "host"
+  }
+  
+  memory {
+    dedicated = 4096
+  }
+  
+  # Disk erweitern
+  disk {
+    datastore_id = "local-lvm"
+    interface    = "scsi0"
+    iothread     = true
+    discard      = "on"
+    size         = 40
+    ssd          = true
+  }
+  
+  # Network
+  network_device {
+    bridge = "vmbr0"
+    model  = "virtio"
+  }
+  
+  # Cloud-Init per VM
+  initialization {
+    user_account {
+      username = "ubuntu"
+      keys     = [var.ssh_public_key]
+    }
+    
+    ip_config {
+      ipv4 {
+        address = "192.168.1.${100 + count.index}/24"
+        gateway = "192.168.1.1"
+      }
+    }
+    
+    dns {
+      servers = ["1.1.1.1", "8.8.8.8"]
+    }
+  }
+  
+  # Boot order
+  boot_order = ["scsi0"]
+  
+  # QEMU Guest Agent
+  agent {
+    enabled = true
+  }
+  
+  # Start on boot
+  started = true
+  
+  depends_on = [proxmox_virtual_environment_vm.ubuntu_template]
+}
+
+# ================================
+# Outputs
+# ================================
+output "template_info" {
+  value = {
+    id   = proxmox_virtual_environment_vm.ubuntu_template.vm_id
+    name = proxmox_virtual_environment_vm.ubuntu_template.name
+  }
+}
+
+output "vm_details" {
+  value = [
+    for vm in proxmox_virtual_environment_vm.ubuntu_vms : {
+      name = vm.name
+      id   = vm.vm_id
+      ip   = vm.ipv4_addresses[1][0]  # Erste nicht-loopback IP
+    }
+  ]
+}
