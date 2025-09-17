@@ -27,12 +27,95 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
   # checksum_algorithm = "sha256"
 }
 
-# ================================
+# ====####============================
 # Template erstellen (SAUBER!)
-# ================================
+# ####================================
 resource "proxmox_virtual_environment_vm" "ubuntu_template" {
   name        = "ubuntu-template"
   description = "Ubuntu 24.04 Cloud Template"
+  node_name   = var.node_name
+  vm_id       = 9001
+  
+  # Template mode
+  template = true
+  
+  # CPU & Memory
+  cpu {
+    cores = 2
+    type  = "host"
+  }
+  
+  memory {
+    dedicated = 2048
+  }
+  
+  # Cloud image als Disk
+  disk {
+    datastore_id = "local-lvm"
+    file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image.id
+    interface    = "scsi0"
+    iothread     = true
+    discard      = "on"
+    size         = 20
+    ssd          = true
+  }
+  
+  # Cloud-Init Drive
+  disk {
+    datastore_id = "local-lvm"
+    file_format  = "raw"
+    interface    = "ide0"
+    size         = 4
+  }
+  
+  # Network
+  network_device {
+    bridge = "vmbr0"
+    model  = "virtio"
+  }
+  
+  # Cloud-Init
+  initialization {
+    user_account {
+      username = "ubuntu"
+      keys     = [var.ssh_public_key]
+    }
+    
+    ip_config {
+      ipv4 {
+        address = "dhcp"
+      }
+    }
+  }
+  
+  # Boot order
+  boot_order = ["scsi0"]
+  
+  # QEMU Guest Agent
+  agent {
+    enabled = true
+  }
+  
+  # VGA
+  vga {
+    type = "serial0"
+  }
+  
+  serial_device {
+    device = "socket"
+  }
+  
+  operating_system {
+    type = "l26"
+  }
+}
+
+# ====####============================
+# WINDOWS Template erstellen (SAUBER!)
+# ####================================
+resource "proxmox_virtual_environment_vm" "ubuntu_template" {
+  name        = "windows-template"
+  description = "Windows Server 2022 EVAL"
   node_name   = var.node_name
   vm_id       = 9001
   
