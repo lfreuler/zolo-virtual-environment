@@ -162,11 +162,6 @@ Write-Host "=========================================="
 Write-Host " Post-Install Script"
 Write-Host "=========================================="
 
-# Passwort fix - MUSS NICHT geändert werden
-# (Sysprep markiert Passwort als "must change" - wir entfernen das Flag)
-net user Administrator /passwordreq:no
-wmic UserAccount where Name="Administrator" set PasswordExpires=False
-
 # Hostname von Metadata ISO lesen
 $metaDrive = Get-Volume | Where-Object {$_.FileSystemLabel -eq "METADATA"} | Select-Object -ExpandProperty DriveLetter
 if ($metaDrive) {
@@ -230,8 +225,8 @@ Write-Host "Preparing Sysprep with MINIMAL unattend.xml..." -ForegroundColor Cya
 Remove-Item "C:\Windows\System32\Sysprep\unattend.xml" -Force -ErrorAction SilentlyContinue
 Remove-Item "C:\Windows\Panther\unattend.xml" -Force -ErrorAction SilentlyContinue
 
-# MINIMAL unattend.xml - FUNKTIONIERT mit Server 2022!
-# KEIN UserAccounts - Server 2022 mag das nicht!
+# ULTRA-MINIMAL unattend.xml - NUR specialize pass!
+# KEIN oobeSystem - das macht Server 2022 kaputt!
 $xml = @'
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
@@ -244,16 +239,6 @@ $xml = @'
       <SystemLocale>de-CH</SystemLocale>
       <UILanguage>en-US</UILanguage>
       <UserLocale>de-CH</UserLocale>
-    </component>
-  </settings>
-  <settings pass="oobeSystem">
-    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <OOBE>
-        <HideEULAPage>true</HideEULAPage>
-        <ProtectYourPC>3</ProtectYourPC>
-        <SkipMachineOOBE>true</SkipMachineOOBE>
-        <SkipUserOOBE>true</SkipUserOOBE>
-      </OOBE>
     </component>
   </settings>
 </unattend>
@@ -277,11 +262,17 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host " READY FOR SYSPREP!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
+Write-Host "⚠️  IMPORTANT: MINIMAL XML - NUR specialize pass!" -ForegroundColor Yellow
+Write-Host "   Kein oobeSystem - Server 2022 mag das nicht!" -ForegroundColor Gray
+Write-Host ""
 Write-Host "Features:" -ForegroundColor Cyan
-Write-Host "  ✅ OOBE wird übersprungen (SkipOOBE)" -ForegroundColor Gray
 Write-Host "  ✅ Locale: de-CH (Schweiz)" -ForegroundColor Gray
 Write-Host "  ✅ Hostname: Random (wird via Post-Install überschrieben)" -ForegroundColor Gray
-Write-Host "  ✅ Passwort: Bleibt wie bei Installation (kein Reset!)" -ForegroundColor Gray
+Write-Host "  ✅ Passwort: Bleibt wie bei Installation" -ForegroundColor Gray
+Write-Host "  ⚠️  OOBE: Wird NICHT übersprungen (Region/Keyboard manuell)" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Command:" -ForegroundColor Yellow
+Write-Host "  C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /unattend:C:\Windows\System32\Sysprep\unattend.xml" -ForegroundColor White
 Write-Host ""
 Write-Host "Command:" -ForegroundColor Yellow
 Write-Host "  C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /unattend:C:\Windows\System32\Sysprep\unattend.xml" -ForegroundColor White
